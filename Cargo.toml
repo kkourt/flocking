@@ -1,5 +1,5 @@
 [package]
-name = "timely-flocking"
+name = "flocking"
 version = "0.1.0"
 authors = ["Kornilios Kourtis <kornilios@gmail.com>"]
 

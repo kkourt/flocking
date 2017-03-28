@@ -68,6 +68,7 @@ pub struct State {
     rng: rand::ThreadRng,
     user: User,
     boids: Vec<Boid>,
+    reset: bool,
 }
 
 impl Boid {
@@ -120,7 +121,15 @@ pub fn rand_body<R: rand::Rng>(rng: &mut R) -> Body {
          , a: 3.14 //getrand(rng, 0.0, 2.0*std::f64::consts::PI)
          , in_rot:  0
          , in_acc:  0 }
+}
 
+pub fn user_initial_body() -> Body {
+    Body { x: (SCREEN_X / 2) as f64
+         , y: (SCREEN_Y / 2) as f64
+         , v:     0.0
+         , a:     0.0
+         , in_rot:  0
+         , in_acc:  0 }
 }
 
 impl State {
@@ -134,17 +143,27 @@ impl State {
 
         State {
             rng: rng,
-            user: User { b: Body { x: (SCREEN_X / 2) as f64
-                                 , y: (SCREEN_Y / 2) as f64
-                                 , v:     0.0
-                                 , a:     0.0
-                                 , in_rot:  0
-                                 , in_acc:  0 } },
-            boids: boids
+            user: User { b: user_initial_body() },
+            boids: boids,
+            reset: false,
         }
     }
 
+    pub fn reset(&mut self) {
+        for boid in self.boids.iter_mut() {
+            boid.b = rand_body(&mut self.rng);
+        }
+        self.user.b = user_initial_body();
+    }
+
     pub fn update(&mut self, dt: f64) {
+
+        if self.reset {
+            self.reset();
+            self.reset = false;
+            return
+        }
+
         self.user.b.update(dt);
         for boid in self.boids.iter_mut() {
             boid.run_ai();
@@ -208,6 +227,8 @@ pub fn main() {
                     Button::Keyboard(Key::Down)  => { st.user.b.accel(true)   },
                     Button::Keyboard(Key::Right) => { st.user.b.rotate(true)  },
                     Button::Keyboard(Key::Left)  => { st.user.b.rotate(false) },
+                    Button::Keyboard(Key::Left)  => { st.user.b.rotate(false) },
+                    Button::Keyboard(Key::R)     => { st.reset = true },
                     _ => {}
                 }
             }

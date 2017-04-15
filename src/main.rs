@@ -10,6 +10,7 @@ use piston::event_loop::*;
 use piston::input::*;
 use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{ GlGraphics, OpenGL };
+use std::f64::consts::PI;
 
 const SCREEN_X: u32 = 1024;
 const SCREEN_Y: u32 = 768;
@@ -17,7 +18,7 @@ const BOIDS_NR: usize = 1;
 
 const MAX_V:        f64 = 100.0;
 const ACCELERATION: f64 = 1.0;
-const ROT_SPEED:    f64 = 1.0*std::f64::consts::PI;
+const ROT_SPEED:    f64 = 1.0*PI;
 
 pub struct Body { x: f64
                 , y: f64
@@ -59,8 +60,8 @@ impl Body {
         }
         self.a += (self.in_rot as f64)*ROT_SPEED*dt;
 
-        self.x -= self.a.sin()*self.v;
-        self.y += self.a.cos()*self.v;
+        self.x += self.a.cos()*self.v;
+        self.y += self.a.sin()*self.v;
     }
 }
 
@@ -71,9 +72,54 @@ pub struct State {
     reset: bool,
 }
 
+
 impl Boid {
+
+    /// adjust Boid to avoid walls.
+    fn avoid_walls(&mut self) {
+        // first we try to find out, which wall are we heading to.
+        // http://stackoverflow.com/questions/7586063/how-to-calculate-the-angle-between-a-line-and-the-horizontal-axis
+        let sx = SCREEN_X as f64;
+        let sy = SCREEN_Y as f64;
+        // wall_points are ordered by angle
+        let wall_points = vec![(0.0, sx), (0.0, 0.0), (sy, 0.0), (sx, sy)];
+        let mut wall_angles = wall_points.iter().map(|&(ref px, ref py)|
+           ((px,py), (py - self.b.y).atan2(px - self.b.x))
+        ).map(|(p,r)| {
+            (p, if r < 0.0 { r + 2.0*PI} else { r })
+        }).collect::<Vec<_>>();
+
+        wall_angles.sort_by(|&(_, ref r1), &(_, ref r2)|
+            match r1.partial_cmp(r2) {
+                Some(o) => o,
+                None    => panic!("Die a horrible death!")
+            }
+        );
+
+        let wpoints_nr = wall_angles.len();
+        let line_points = match wall_angles.iter().position(|&(_, ref a)|
+            match a.partial_cmp(&self.b.a) {
+                None => panic!("Die a horrible death, part 2!"),
+                Some(std::cmp::Ordering::Greater) => true,
+                _ => false,
+            }
+        ) {
+            Some(0) => (wall_angles[wpoints_nr-1], wall_angles[0]),
+            Some(i) => (wall_angles[i-1], wall_angles[i]),
+            None    => (wall_angles[wpoints_nr-1], wall_angles[0]),
+        };
+
+        println!("line_points={:?}", line_points);
+        //println!("b.x={:?} b.y={:?} wall_points={:?} wall_angles:{:?} b.angle={:?}",
+        //    self.b.x, self.b.y, wall_points, wall_angles.collect::<Vec<_>>(), self.b.a);
+    }
+
+
+
     pub fn run_ai(&mut self) {
         self.b.in_rot = 0;
+
+        self.avoid_walls();
 
         let d_top   = self.b.y;
         let d_bot   = (SCREEN_Y as f64) - self.b.y;
@@ -84,13 +130,13 @@ impl Boid {
         let d_min   = if d_hor < d_ver { d_hor } else { d_ver };
 
         let rads = self.b.a;
-        assert!(rads >= 0.0 && rads <= 2.0*std::f64::consts::PI);
-        let q = (rads / (std::f64::consts::PI/2.0)).round() as u32;
+        assert!(rads >= 0.0 && rads <= 2.0*PI);
+        let q = (rads / (PI/2.0)).round() as u32;
 
         self.b.in_rot = if d_min > 100.0 {
             0
         } else if d_min == d_top {
-            println!("q={:?} rads={:?}", q, rads);
+            //println!("q={:?} rads={:?}", q, rads);
             match q {
                 1 => -1,
                 2 => 1,
@@ -115,10 +161,10 @@ pub fn getrand<R,T>(rng: &mut R, s: T, e: T) -> T
 }
 
 pub fn rand_body<R: rand::Rng>(rng: &mut R) -> Body {
-    Body { x: getrand(rng, 0, SCREEN_X -10) as f64
-         , y: getrand(rng, 0, SCREEN_Y -10) as f64
-         , v: 1.0 // getrand(rng, 0.0, 5.5)
-         , a: 3.14 //getrand(rng, 0.0, 2.0*std::f64::consts::PI)
+    Body { x: (SCREEN_X / 2) as f64 //getrand(rng, 0, SCREEN_X -10) as f64
+         , y: (SCREEN_Y / 2) as f64 //getrand(rng, 0, SCREEN_Y -10) as f64
+         , v: 0.1 //1.0 // getrand(rng, 0.0, 5.5)
+         , a: 0.0 //getrand(rng, 0.0, 2.0*std::f64::consts::PI)
          , in_rot:  0
          , in_acc:  0 }
 }
@@ -185,18 +231,19 @@ pub fn render(c: graphics::Context, gl: &mut GlGraphics, state: &State) {
     ];
     // Clear the screen.
     clear(bg_c, gl);
+
     // render user
     let ref user = &state.user;
     let user_trans = c.transform
                       .trans(user.b.x, user.b.y)
-                      .rot_rad(user.b.a)
+                      .rot_rad(user.b.a - PI/2.0)
                       .scale(1.0,1.0);
     polygon(usr_c, USER_POLY, user_trans, gl);
 
     for boid in state.boids.iter() {
         let boid_trans = c.transform
                           .trans(boid.b.x, boid.b.y)
-                          .rot_rad(boid.b.a)
+                          .rot_rad(boid.b.a - PI/2.0)
                           .scale(1.0,1.0);
         polygon(boid_c, USER_POLY, boid_trans, gl);
     }
@@ -207,7 +254,7 @@ pub fn main() {
     let opengl = OpenGL::V3_2;
 
     // Create an Glutin window.
-    let mut window: Window = WindowSettings::new("flock", [SCREEN_X, SCREEN_Y])
+    let mut window: Window = WindowSettings::new("_flock_", [SCREEN_X, SCREEN_Y])
         .opengl(opengl)
         .exit_on_esc(true)
         .build()

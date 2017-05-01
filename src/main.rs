@@ -12,6 +12,8 @@ use glutin_window::GlutinWindow as Window;
 use opengl_graphics::{ GlGraphics, OpenGL };
 use std::f64::consts::PI;
 
+mod util2d;
+
 const SCREEN_X: u32 = 1024;
 const SCREEN_Y: u32 = 768;
 const BOIDS_NR: usize = 1;

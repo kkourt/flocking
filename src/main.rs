@@ -106,11 +106,14 @@ impl Boid {
                 _ => false,
             }
         ) {
-            Some(0) => (wall_angles[wpoints_nr-1], wall_angles[0]),
+            Some(0) => (wall_angles[0], wall_angles[wpoints_nr-1]),
             Some(i) => (wall_angles[i-1], wall_angles[i]),
-            None    => (wall_angles[wpoints_nr-1], wall_angles[0]),
+            None    => (wall_angles[0], wall_angles[wpoints_nr-1]),
         };
 
+
+        // OK now we have the wall that we are going to hit (line_points), next
+        // we need to compute our distance from it.
         println!("line_points={:?}", line_points);
         //println!("b.x={:?} b.y={:?} wall_points={:?} wall_angles:{:?} b.angle={:?}",
         //    self.b.x, self.b.y, wall_points, wall_angles.collect::<Vec<_>>(), self.b.a);

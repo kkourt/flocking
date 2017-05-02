@@ -7,15 +7,17 @@
 //   Include/Mathematics/GteVector.h
 //   Include/Mathematics/GteVector2.h
 //   Include/Mathematics/GteLine.h
+//   Include/Mathematics/GteIntrIntervals.h
 //   Include/Mathematics/GteIntrLine2Line2.h
+//   Include/Mathematics/GteIntrSegment2Segment2.h
 //
 // Kornilios Kourtis <kornilios@gmail.com>
 //
-// NB: not sure what the implication of not having a complete order for floating
-// points in rust is.
+// NB #1: Not sure what the implication of not having a complete order for
+// floating points in rust is.
 //
-// In general, the code is not very robust wrt floating point operations and
-// geometry.
+// NB #2: In general, the code is not very robust wrt floating point operations
+// and geometry.
 
 use std;
 use std::f64::consts::PI;
@@ -41,6 +43,11 @@ trait Vec2 {
         let (x,y) = self.get_xy_mut();
         f(x);
         f(y);
+    }
+
+    fn xform<T>(&self) -> T where T: Vec2 {
+        let (x,y) = self.get_xy();
+        T::from_xy(*x, *y)
     }
 
     fn normalize(&mut self) {
@@ -82,6 +89,50 @@ trait Vec2 {
         } else {
             true
         }
+    }
+}
+
+// GteIntrIntervals.h:
+// The intervals are [u0,u1] and [v0,v1], where u0 <= u1 and v0 <= v1, and
+// where the endpoints are any finite floating-point numbers.  Degenerate
+// intervals are allowed (u0 = u1 or v0 = v1).  The queries do not perform
+// validation on the input intervals.
+pub struct Interval(f64, f64);
+
+pub enum IntervalIntersection {
+    None,
+    Interval(Interval),
+}
+
+impl Interval {
+    pub fn intersection(&self, int: &Interval) -> IntervalIntersection {
+        let &Interval(ref x0, ref x1) = self;
+        let &Interval(ref y0, ref y1) = self;
+
+        // x0       x1  y0      y1
+        // |--------|   |-------|
+        if x1 < y0 {
+            return IntervalIntersection::None
+        }
+
+        // y0       y1  x0      x1
+        // |--------|   |-------|
+        if y1 < x0 {
+            return IntervalIntersection::None
+        }
+
+        //    x0        x1
+        //    |---------|
+        //            |---------|
+        //            y0        y1
+        //
+        //    y0        y1
+        //    |---------|
+        //         |---------|
+        //        x0        x1
+        let i0 = x0.max(*y0);
+        let i1 = x1.max(*y1);
+        IntervalIntersection::Interval(Interval(i0, i1))
     }
 }
 
@@ -134,9 +185,20 @@ impl std::ops::Mul<f64> for Point {
     fn mul(self, s: f64) -> Point { Point {x: self.x*s, y: self.y*s} }
 }
 
+
 impl std::ops::Mul<Point> for f64 {
     type Output = Point;
     fn mul(self, p: Point) -> Point { p*self }
+}
+
+impl std::ops::Div<f64> for Point {
+    type Output = Point;
+    fn div(self, s: f64) -> Point { Point {x: self.x / s, y: self.y / s} }
+}
+
+impl std::ops::Div<Point> for f64 {
+    type Output = Point;
+    fn div(self, p: Point) -> Point { p/self }
 }
 
 // The line is represented by P + t*D, where:
@@ -151,7 +213,7 @@ pub struct Line {
 
 #[derive(Debug,PartialEq)]
 pub enum LineIntersection {
-    Point(Point),
+    Point(Point, f64, f64), // point and line parameters
     Parallel,
     Same,
 }
@@ -161,7 +223,7 @@ impl LineIntersection {
         match (self, x) {
             (&LineIntersection::Parallel, &LineIntersection::Parallel) => true,
             (&LineIntersection::Same, &LineIntersection::Same) => true,
-            (&LineIntersection::Point(ref p1), &LineIntersection::Point(ref p2)) => p1.close(p2),
+            (&LineIntersection::Point(ref p1, _, _), &LineIntersection::Point(ref p2, _, _)) => p1.close(p2),
             _ => false,
         }
     }
@@ -201,9 +263,11 @@ impl Line {
         let mut diff = line1.origin - line0.origin;
         let dp_d0_d1 = line0.direction.dot_perp(line1.direction);
         if dp_d0_d1 != 0. { // lines are not parallel
+            let dp_diff_d0 = diff.dot_perp(line0.direction);
             let dp_diff_d1 = diff.dot_perp(line1.direction);
             let s0 = dp_diff_d1 / dp_d0_d1;
-            return LineIntersection::Point(line0.get_point(s0))
+            let s1 = dp_diff_d0 / dp_d0_d1;
+            return LineIntersection::Point(line0.get_point(s0), s0, s1)
         }
 
         // Lines are parallel
@@ -252,15 +316,92 @@ pub fn t_line_intersection() {
     }
 }
 
+// A segment is represented by:
+//  (1-t)*P0 + t*P1, 0 <= t <= 1
+// Where P0, P1 are the endpoints of the segment
 #[derive(Debug)]
-pub struct Segment {
-    points: [Point; 2]
+pub struct Segment(Point,Point);
+
+// from Include/Mathematics/GteIntrSegment2Segment2.h:
+// Some algorithms prefer a centered representation that is similar to how
+// oriented bounding boxes are defined.  This representation is:
+//
+// C + s*D, where:
+//  C = (P0 + P1)/2 is the center of the segment,
+//  D = (P1 - P0)/|P1 - P0| is a unit-length direction vector for the segment, and
+//  |t| <= e.  The value e = |P1 - P0|/2 is the extent (or radius or half-length) of the segment.
+pub struct SegmentCentered {
+    center: Point,
+    direction: [f64; 2],
+    extent: f64,
 }
 
+impl SegmentCentered {
+    pub fn get_line(&self) -> Line {
+        Line { origin: self.center, direction: self.direction }
+    }
+}
 
 pub enum SegmentIntersection {
     None,
     Point(Point),
     Overlap(Segment),
+}
+
+impl Segment {
+    pub fn get_centered(&self) -> SegmentCentered {
+        let &Segment(p0,p1) = self;
+        let cent = (p0 + p1) / 2.;
+        let mut diff = p1 - p0;
+        let size = diff.dot_self().sqrt();
+        diff.normalize();
+        SegmentCentered {
+            center: cent,
+            direction: diff.xform(),
+            extent: size / 2.
+        }
+    }
+
+    pub fn intersection(&self, seg1: &Segment) -> SegmentIntersection {
+        let seg0_c = self.get_centered();
+        let seg1_c = seg1.get_centered();
+        let line0 = seg0_c.get_line();
+        let line1 = seg1_c.get_line();
+
+        match line0.intersection(&line1) {
+            LineIntersection::Parallel => SegmentIntersection::None,
+            LineIntersection::Point(ref p, ref s0, ref s1) => {
+                if s0.abs() <= seg0_c.extent && s1.abs() <= seg1_c.extent {
+                    SegmentIntersection::Point(*p)
+                } else {
+                    SegmentIntersection::None
+                }
+            },
+            LineIntersection::Same => {
+                // Compute the location of segment1 endpoints relative to segment0.
+                let diff = seg1_c.center - seg0_c.center;
+                let t = seg0_c.direction.dot(&diff);
+
+                // Get the parameter intervals of the segments relative to segment0.
+                let interval0 = Interval(-seg0_c.extent, seg0_c.extent);
+                let interval1 = Interval(t - seg1_c.extent, t + seg1_c.extent);
+                match interval0.intersection(&interval1) {
+                    IntervalIntersection::None => SegmentIntersection::None,
+                    IntervalIntersection::Interval(Interval(p1, p2)) => {
+                        if p1 == p2 {
+                            let x : Point = seg0_c.direction.xform();
+                            let sp = seg0_c.center + p1*x;
+                            SegmentIntersection::Point(sp)
+                        } else {
+                            let x : Point = seg0_c.direction.xform();
+                            let sp1 = seg0_c.center + p1*x;
+                            let sp2 = seg0_c.center + p2*x;
+                            SegmentIntersection::Overlap(Segment(sp1,sp2))
+                        }
+                    },
+                }
+            },
+        }
+    }
 }
 

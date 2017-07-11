@@ -14,6 +14,8 @@ use std::f64::consts::PI;
 
 mod util2d;
 
+use util2d::Vec2;
+
 const SCREEN_X: u32 = 1024;
 const SCREEN_Y: u32 = 768;
 const BOIDS_NR: usize = 1;
@@ -84,7 +86,7 @@ impl Boid {
         let sx = SCREEN_X as f64;
         let sy = SCREEN_Y as f64;
         // wall_points are ordered by angle
-        let wall_points = vec![(0.0, sx), (0.0, 0.0), (sy, 0.0), (sx, sy)];
+        let wall_points = vec![(0.0, sy), (0.0, 0.0), (sx, 0.0), (sx, sy)];
         let mut wall_angles = wall_points.iter().map(|&(ref px, ref py)|
            ((px,py), (py - self.b.y).atan2(px - self.b.x))
         ).map(|(p,r)| {
@@ -111,12 +113,21 @@ impl Boid {
             None    => (wall_angles[0], wall_angles[wpoints_nr-1]),
         };
 
+        let wall = util2d::Segment(
+            util2d::Point { x: *((line_points.0).0).0, y: *((line_points.0).0).1 },
+            util2d::Point { x: *((line_points.1).0).0, y: *((line_points.1).0).1 },
+        );
 
-        // OK now we have the wall that we are going to hit (line_points), next
-        // we need to compute our distance from it.
-        println!("line_points={:?}", line_points);
-        //println!("b.x={:?} b.y={:?} wall_points={:?} wall_angles:{:?} b.angle={:?}",
-        //    self.b.x, self.b.y, wall_points, wall_angles.collect::<Vec<_>>(), self.b.a);
+        // OK now we have the wall that we are going to hit (wall), next we need
+        // to compute our distance from it.
+        let boid_p = util2d::Point {x: self.b.x, y: self.b.y };
+        let direction = util2d::Line::from_p_angle(boid_p, self.b.a);
+        let wall_p = match wall.intersection_line(&direction) {
+                util2d::SegmentIntersection::Point(p) => p,
+                _ => panic!("Unexpected enum variant"),
+        };
+        let wall_distance = wall_p.distance(boid_p);
+        println!("wall={:?} wall_p={:?} boid_p={:?} SCREEN:{:?} wall distance={:?}", wall, wall_p, boid_p, (SCREEN_X, SCREEN_Y), wall_distance);
     }
 
 
@@ -168,7 +179,7 @@ pub fn getrand<R,T>(rng: &mut R, s: T, e: T) -> T
 pub fn rand_body<R: rand::Rng>(rng: &mut R) -> Body {
     Body { x: (SCREEN_X / 2) as f64 //getrand(rng, 0, SCREEN_X -10) as f64
          , y: (SCREEN_Y / 2) as f64 //getrand(rng, 0, SCREEN_Y -10) as f64
-         , v: 0.1 //1.0 // getrand(rng, 0.0, 5.5)
+         , v: 0.8 //1.0 // getrand(rng, 0.0, 5.5)
          , a: 0.0 //getrand(rng, 0.0, 2.0*std::f64::consts::PI)
          , in_rot:  0
          , in_acc:  0 }

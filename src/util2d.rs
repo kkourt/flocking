@@ -22,7 +22,7 @@
 use std;
 use std::f64::consts::PI;
 
-trait Vec2 {
+pub trait Vec2 {
     fn get_xy(&self) -> (&f64, &f64);
     fn get_xy_mut(&mut self) -> (&mut f64, &mut f64);
     fn from_xy(x: f64, y: f64) -> Self;
@@ -36,7 +36,7 @@ trait Vec2 {
     // x.dot(x)
     fn dot_self(&self) -> f64 {
         let (x, y) = self.get_xy();
-        x.powi(2) + x.powi(2)
+        x.powi(2) + y.powi(2)
     }
 
     fn apply<F>(&mut self, mut f: F) where F: FnMut(&mut f64) {
@@ -48,6 +48,12 @@ trait Vec2 {
     fn xform<T>(&self) -> T where T: Vec2 {
         let (x,y) = self.get_xy();
         T::from_xy(*x, *y)
+    }
+
+    fn distance<T>(&self, p: T) -> f64 where T: Vec2 {
+        let (x1, y1) = self.get_xy();
+        let (x2, y2) = p.get_xy();
+        return ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt();
     }
 
     fn normalize(&mut self) {
@@ -138,8 +144,8 @@ impl Interval {
 
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Point {
-    x: f64,
-    y: f64,
+    pub x: f64,
+    pub y: f64,
 }
 
 impl Vec2 for Point {
@@ -304,7 +310,10 @@ pub fn t_line_intersection() {
         let l2 = Line::from_p_angle(Point { x: 0., y: 0. }, PI / 2.0);
         let res = l1.intersection(&l2);
         println!("l1:{:?}\nl2:{:?}\nintersection:{:?}", l1, l2, res);
-        assert_eq!(res, LineIntersection::Point(Point{x: 0., y: 0.}));
+        match res {
+            LineIntersection::Point(p, _, _) => assert_eq!(p, Point{x: 0.0, y: 0.0}),
+            _ => assert!(false),
+        };
     }
 
     {
@@ -312,15 +321,18 @@ pub fn t_line_intersection() {
         let l2 = Line::from_p_angle(Point { x: 0., y: 1. }, PI / 2.0);
         let res = l1.intersection(&l2);
         println!("l1:{:?}\nl2:{:?}\nintersection:{:?}", l1, l2, res);
-        assert!(LineIntersection::Point(Point{x: 0., y: 0.}).close(&res));
+        match res {
+            LineIntersection::Point(p, _, _) => assert!(p.close(&Point{x: 0.0, y: 0.0})),
+            _ => assert!(false),
+        };
     }
 }
 
 // A segment is represented by:
 //  (1-t)*P0 + t*P1, 0 <= t <= 1
 // Where P0, P1 are the endpoints of the segment
-#[derive(Debug)]
-pub struct Segment(Point,Point);
+#[derive(Debug,Clone,PartialEq)]
+pub struct Segment(pub Point,pub Point);
 
 // from Include/Mathematics/GteIntrSegment2Segment2.h:
 // Some algorithms prefer a centered representation that is similar to how
@@ -330,6 +342,7 @@ pub struct Segment(Point,Point);
 //  C = (P0 + P1)/2 is the center of the segment,
 //  D = (P1 - P0)/|P1 - P0| is a unit-length direction vector for the segment, and
 //  |t| <= e.  The value e = |P1 - P0|/2 is the extent (or radius or half-length) of the segment.
+#[derive(Debug)]
 pub struct SegmentCentered {
     center: Point,
     direction: [f64; 2],
@@ -342,6 +355,7 @@ impl SegmentCentered {
     }
 }
 
+#[derive(Debug,PartialEq)]
 pub enum SegmentIntersection {
     None,
     Point(Point),
@@ -361,6 +375,25 @@ impl Segment {
             extent: size / 2.
         }
     }
+
+    pub fn intersection_line(&self, line: &Line) -> SegmentIntersection {
+        let seg0_c = self.get_centered();
+        let line0 = seg0_c.get_line();
+
+        match line0.intersection(&line) {
+            LineIntersection::Parallel => SegmentIntersection::None,
+            LineIntersection::Same => SegmentIntersection::Overlap(self.clone()),
+            LineIntersection::Point(ref p, ref s0, ref s1) => {
+                if s0.abs() <= seg0_c.extent {
+                    SegmentIntersection::Point(*p)
+                } else {
+                    SegmentIntersection::None
+                }
+            },
+
+        }
+    }
+
 
     pub fn intersection(&self, seg1: &Segment) -> SegmentIntersection {
         let seg0_c = self.get_centered();
@@ -405,3 +438,11 @@ impl Segment {
     }
 }
 
+
+#[test]
+pub fn t_segment_intersection() {
+    let seg1 = Segment(Point{ x: -1.0, y: 0.0}, Point{ x: 1.0, y: 0.0});
+    let seg2 = Segment(Point{ y: -1.0, x: 0.0}, Point{ y: 1.0, x: 0.0});
+    let i = seg1.intersection(&seg2);
+    assert!(i.eq(&SegmentIntersection::Point(Point{ x: 0.0, y: 0.0 })) == true);
+}

@@ -363,6 +363,17 @@ pub enum SegmentIntersection {
 }
 
 impl Segment {
+
+    pub fn angle(&self) -> f64 {
+        let &Segment(ref a, ref b) = self;
+        (b.y - a.y).atan2(b.x - a.x)
+    }
+
+    pub fn to_vector<T>(&self) -> T where T: Vec2 {
+        let &Segment(ref a, ref b) = self;
+        T::from_xy(b.x - a.x, b.y - a.y)
+    }
+
     pub fn get_centered(&self) -> SegmentCentered {
         let &Segment(p0,p1) = self;
         let cent = (p0 + p1) / 2.;

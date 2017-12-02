@@ -18,7 +18,7 @@ use util2d::Vec2;
 
 const SCREEN_X: u32 = 1024;
 const SCREEN_Y: u32 = 768;
-const BOIDS_NR: usize = 1;
+const BOIDS_NR: usize = 1000;
 
 const MAX_V:        f64 = 100.0;
 const ACCELERATION: f64 = 1.0;
@@ -67,6 +67,14 @@ impl Body {
         self.x += self.a.cos()*self.v;
         self.y += self.a.sin()*self.v;
     }
+
+    // is body out of bounds?
+    pub fn is_oob(&self) -> bool {
+        self.x < 0.0 ||
+        self.x > (SCREEN_X as f64) ||
+        self.y < 0.0 ||
+        self.y > (SCREEN_Y as f64)
+    }
 }
 
 pub struct State {
@@ -85,11 +93,15 @@ impl Boid {
         // http://stackoverflow.com/questions/7586063/how-to-calculate-the-angle-between-a-line-and-the-horizontal-axis
         let sx = SCREEN_X as f64;
         let sy = SCREEN_Y as f64;
-        // wall_points are ordered by angle
+
+        // Get all the walls points.(Currently, the walls are rectangular, but I
+        // think this should work for any convex shape.)
         let wall_points = vec![(0.0, sy), (0.0, 0.0), (sx, 0.0), (sx, sy)];
         let mut wall_angles = wall_points.iter().map(|&(ref px, ref py)|
+           // for each point, compute the angle from the boid
            ((px,py), (py - self.b.y).atan2(px - self.b.x))
         ).map(|(p,r)| {
+            // make the angle positive if it's not
             (p, if r < 0.0 { r + 2.0*PI} else { r })
         }).collect::<Vec<_>>();
 
@@ -101,6 +113,8 @@ impl Boid {
         );
 
         let wpoints_nr = wall_angles.len();
+        // find the position of the first angle that's larger than the boid's
+        // angle
         let line_points = match wall_angles.iter().position(|&(_, ref a)|
             match a.partial_cmp(&self.b.a) {
                 None => panic!("Die a horrible death, part 2!"),
@@ -108,9 +122,9 @@ impl Boid {
                 _ => false,
             }
         ) {
-            Some(0) => (wall_angles[0], wall_angles[wpoints_nr-1]),
+            Some(0) => (wall_angles[wpoints_nr-1], wall_angles[0]),
+            None    => (wall_angles[wpoints_nr-1], wall_angles[0]),
             Some(i) => (wall_angles[i-1], wall_angles[i]),
-            None    => (wall_angles[0], wall_angles[wpoints_nr-1]),
         };
 
         let wall = util2d::Segment(
@@ -126,8 +140,34 @@ impl Boid {
                 util2d::SegmentIntersection::Point(p) => p,
                 _ => panic!("Unexpected enum variant"),
         };
+
         let wall_distance = wall_p.distance(boid_p);
-        println!("wall={:?} wall_p={:?} boid_p={:?} SCREEN:{:?} wall distance={:?}", wall, wall_p, boid_p, (SCREEN_X, SCREEN_Y), wall_distance);
+        // println!("wall={:?} wall_p={:?} boid_p={:?} SCREEN:{:?} wall distance={:?}", wall, wall_p, boid_p, (SCREEN_X, SCREEN_Y), wall_distance);
+        if wall_distance < 100.0 {
+            // We need to determine the direction to turn
+            let dir_v : util2d::Point = wall_p - boid_p;
+            let wall_v : util2d::Point = wall.to_vector();
+            // println!("dir_v={:?} wall_v={:?}" , dir_v, wall_v);
+            let dot = dir_v.dot(&wall_v);
+            // println!("Angle={:?} dot={:?}", self.b.a*180.0/PI, dot);
+            if dot < 0.0 {
+                // println!("TURNING CCW");
+                self.b.a -= (20.0*PI/180.0)
+            } else if dot > 0.0 {
+                // println!("TURNING CW");
+                self.b.a += (20.0*PI/180.0)
+            } else {
+                self.b.a += (1.0*PI/180.0)
+            }
+        }
+
+        while self.b.a < 0.0 {
+            self.b.a += 2.0*PI;
+        }
+
+        while self.b.a > 2.0*PI {
+            self.b.a -= 2.0*PI;
+        }
     }
 
 
@@ -179,8 +219,9 @@ pub fn getrand<R,T>(rng: &mut R, s: T, e: T) -> T
 pub fn rand_body<R: rand::Rng>(rng: &mut R) -> Body {
     Body { x: (SCREEN_X / 2) as f64 //getrand(rng, 0, SCREEN_X -10) as f64
          , y: (SCREEN_Y / 2) as f64 //getrand(rng, 0, SCREEN_Y -10) as f64
-         , v: 0.8 //1.0 // getrand(rng, 0.0, 5.5)
-         , a: 0.0 //getrand(rng, 0.0, 2.0*std::f64::consts::PI)
+         , v: 1.0 // getrand(rng, 0.0, 5.5)
+         // , a: PI*1.0/180.0 //getrand(rng, 0.0, 2.0*std::f64::consts::PI)
+         , a: getrand(rng, 0.0, 2.0*std::f64::consts::PI)
          , in_rot:  0
          , in_acc:  0 }
 }
@@ -227,7 +268,7 @@ impl State {
         }
 
         self.user.b.update(dt);
-        for boid in self.boids.iter_mut() {
+        for boid in self.boids.iter_mut().filter(|x| !x.b.is_oob() ) {
             boid.run_ai();
             boid.b.update(dt)
         }

@@ -1,4 +1,4 @@
-// vim: set expandtab softtabstop=4 tabstop=4 shiftwidth=4:
+// vim: set expandtab softtabstop=4 tabstop=4 shiftwidth=4 nowrap:
 extern crate piston;
 extern crate graphics;
 extern crate glutin_window;
@@ -16,21 +16,23 @@ mod util2d;
 
 use util2d::Vec2;
 
-const SCREEN_X: u32 = 1024;
-const SCREEN_Y: u32 = 768;
-const BOIDS_NR: usize = 1000;
+const SCREEN_X: u32 = 800; //1024;
+const SCREEN_Y: u32 = 600; //768;
+const BOIDS_NR: usize = 100;
 
 const MAX_V:        f64 = 100.0;
 const ACCELERATION: f64 = 1.0;
 const ROT_SPEED:    f64 = 1.0*PI;
 
-pub struct Body { x: f64
-                , y: f64
-                , v: f64 // velocity
-                , a: f64 // angle
-                // input: acceleration and rotation (-1, 0, 1)
-                , in_acc: i32
-                , in_rot: i32 }
+pub struct Body {
+    x: f64,
+    y: f64,
+    v: f64, // velocity
+    a: f64, // angle
+    // input: acceleration and rotation (-1, 0, 1)
+    in_acc: i32,
+    in_rot: i32
+}
 
 pub struct Boid { b: Body }
 pub struct User { b: Body }
@@ -82,6 +84,7 @@ pub struct State {
     user: User,
     boids: Vec<Boid>,
     reset: bool,
+    pause: bool,
 }
 
 
@@ -150,15 +153,15 @@ impl Boid {
             // println!("dir_v={:?} wall_v={:?}" , dir_v, wall_v);
             let dot = dir_v.dot(&wall_v);
             // println!("Angle={:?} dot={:?}", self.b.a*180.0/PI, dot);
-            if dot < 0.0 {
-                // println!("TURNING CCW");
-                self.b.a -= (20.0*PI/180.0)
-            } else if dot > 0.0 {
-                // println!("TURNING CW");
-                self.b.a += (20.0*PI/180.0)
-            } else {
-                self.b.a += (1.0*PI/180.0)
-            }
+            let turn = {
+                if dot < 0.0 {
+                    -20.0*PI/180.0
+                } else {
+                    -20.0*PI/180.0
+                }
+            };
+            // println!("Turning={:?}", turn);
+            self.b.a += turn;
         }
 
         while self.b.a < 0.0 {
@@ -217,11 +220,15 @@ pub fn getrand<R,T>(rng: &mut R, s: T, e: T) -> T
 }
 
 pub fn rand_body<R: rand::Rng>(rng: &mut R) -> Body {
+
+    let rand_a = getrand(rng, 0.0, 2.0*std::f64::consts::PI);
+    // let rand_a = 0.6318703870433586;
+    // println!("rand_a={:?}", rand_a);
     Body { x: (SCREEN_X / 2) as f64 //getrand(rng, 0, SCREEN_X -10) as f64
          , y: (SCREEN_Y / 2) as f64 //getrand(rng, 0, SCREEN_Y -10) as f64
          , v: 1.0 // getrand(rng, 0.0, 5.5)
          // , a: PI*1.0/180.0 //getrand(rng, 0.0, 2.0*std::f64::consts::PI)
-         , a: getrand(rng, 0.0, 2.0*std::f64::consts::PI)
+         , a: rand_a
          , in_rot:  0
          , in_acc:  0 }
 }
@@ -249,6 +256,7 @@ impl State {
             user: User { b: user_initial_body() },
             boids: boids,
             reset: false,
+            pause: false,
         }
     }
 
@@ -264,6 +272,10 @@ impl State {
         if self.reset {
             self.reset();
             self.reset = false;
+            return
+        }
+
+        if self.pause {
             return
         }
 
@@ -333,6 +345,7 @@ pub fn main() {
                     Button::Keyboard(Key::Left)  => { st.user.b.rotate(false) },
                     Button::Keyboard(Key::Left)  => { st.user.b.rotate(false) },
                     Button::Keyboard(Key::R)     => { st.reset = true },
+                    Button::Keyboard(Key::Space) => { st.pause = !st.pause },
                     _ => {}
                 }
             }

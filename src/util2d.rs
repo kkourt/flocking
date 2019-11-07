@@ -13,7 +13,7 @@
 //
 // Kornilios Kourtis <kornilios@gmail.com>
 //
-// NB #1: Not sure what the implication of not having a complete order for
+// NB #1: Not sure what the implication of not having a full order for
 // floating points in rust is.
 //
 // NB #2: In general, the code is not very robust wrt floating point operations
